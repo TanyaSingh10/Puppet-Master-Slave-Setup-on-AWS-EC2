@@ -1,0 +1,113 @@
+PREREQUISITES:
+1. Install PuTTY from putty.org.
+2. AWS account with 2 EC2 instances (Ubuntu/Debian recommended).
+3. Key pairs (.pem) converted to .ppk using PuTTYgen if needed.
+4. Security group: Allow All TCP from Anywhere for testing.
+
+INSTANCE SETUP:
+Launch 2 instances with:
+   a.Choose Ubuntu Server 22.04 in Application and OS Images (Amazon Machine Image).
+   b.Choose t3.small in Instance Type.
+   c.Create a keypair using .pem.
+   d.Add All TCP and ANYWHERE in the network ip in the Security group.
+   e.Change their names to slave and master.
+
+MASTER NODE CONFIGURATION:
+1.Update & Install Dependencies:
+  sudo apt-get update
+  sudo apt-get install wget
+2.Update Hosts File:
+  sudo nano /etc/hosts
+  # Add:
+  <private_ip_of_master> puppet
+3.Install Puppet Master:
+  wget https://apt.puppetlabs.com/puppet-release-bionic.deb
+  sudo dpkg -i puppet-release-bionic.deb
+  sudo apt-get install puppet-master
+4.Verify & Configure:
+  apt policy puppet-master
+  sudo systemctl status puppet-master.service
+  sudo vim /etc/default/puppet-master #You can also use nano and if it appears empty just add it.
+  # Add/modify JAVA_ARGS
+  JAVA_ARGS="-Xms512m -Xmx512m"
+  sudo systemctl restart puppet-master.service
+  sudo ufw allow 8140/tcp   # Open communication port
+---MASTER SET-UP COMPLETE---
+
+SLAVE NODE CONFIGURATION:
+1.Update $ Install Puppet:
+  sudo apt-get update
+  sudo apt-get install wget
+2.Update Hosts File:
+  sudo nano /etc/hosts
+  # Add:
+  <private_ip_of_master> puppet
+3.Install Puppet Master:
+  wget https://apt.puppetlabs.com/puppet-release-bionic.deb
+  sudo dpkg -i puppet-release-bionic.deb
+  sudo apt-get install puppet
+  sudo systemctl start puppet
+  sudo systemctl enable puppet
+---SLAVE SET-UP COMPLETE---
+
+MASTER-SLAVE CERTIFICATE SIGNING:
+On Master:
+  sudo puppet cert list --all
+  sudo puppet cert sign --all
+
+CREATING FIRST MANIFEST:
+1.Create Manifest Directory:
+  sudo mkdir -p /etc/puppet/code/environments/production/manifests/
+  sudo nano /etc/puppet/code/environments/production/manifests/site.pp
+  Add:
+      file { '/tmp/puppet_test.txt':
+      ensure  => present,
+      mode    => '0644',
+      content => "Working on ${ipaddress_eth0}!\n",
+      }
+2.Restart Puppet Master:
+  sudo systemctl restart puppet-master
+
+APPLY MANIFEST ON SLAVE:
+cd /tmp
+ls   # check the files
+sudo puppet agent --test
+cat puppet_test.txt  # verify the content
+
+INSTALLING & CONFIGURING NGINX VIA PUPPET:
+1.MASTER: Create new_site.pp:
+  sudo nano /etc/puppet/code/environments/production/manifests/new_site.pp
+2.Manifest Content:
+  node default {
+  # Install nginx
+  package { 'nginx':
+    ensure => installed,
+  }
+
+  # Ensure nginx service is running
+  service { 'nginx':
+    ensure => running,
+  }
+
+  # Create index.html
+  file { '/var/www/html/index.html':
+    ensure  => present,
+    mode    => '0644',
+    content => "Welcome All by DevOps Domain - KD17",
+  }
+
+  # Optional: create status file
+  file { '/tmp/status.txt':
+    content => 'Nginx has been installed successfully',
+    mode    => '0644',
+  }
+}
+
+2.SLAVE: Apply Manifest:
+  sudo puppet agent --test
+3.VERIFICATIOn:
+  a.Open web browser → http://<slave_public_ip> → should show the custom page.
+  b.Check status file:
+    cat /tmp/status.txt
+
+-----SET-UP COMPLETE-----
